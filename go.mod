@@ -10,6 +10,7 @@ require (
 	github.com/emicklei/go-restful v2.11.2+incompatible // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/fogleman/gg v1.3.0 // indirect
+	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v0.1.0
 	github.com/go-logr/zapr v0.1.0 // indirect
 	github.com/go-openapi/spec v0.19.2
@@ -44,6 +45,7 @@ require (
 	google.golang.org/api v0.11.0
 	google.golang.org/appengine v1.6.5 // indirect
 	google.golang.org/grpc v1.24.0 // indirect
+	gopkg.in/yaml.v2 v2.2.5
 	k8s.io/api v0.17.1
 	k8s.io/apimachinery v0.17.1
 	k8s.io/client-go v2.0.0-alpha.0.0.20181126152608-d082d5923d3c+incompatible

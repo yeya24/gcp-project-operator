@@ -18,6 +18,7 @@ import (
 
 	api "github.com/openshift/gcp-project-operator/pkg/apis/gcp/v1alpha1"
 	gcpv1alpha1 "github.com/openshift/gcp-project-operator/pkg/apis/gcp/v1alpha1"
+	"github.com/openshift/gcp-project-operator/pkg/configmap"
 	. "github.com/openshift/gcp-project-operator/pkg/controller/projectreference"
 	"github.com/openshift/gcp-project-operator/pkg/util"
 	"github.com/openshift/gcp-project-operator/pkg/util/mocks"
@@ -27,8 +28,8 @@ import (
 )
 
 var (
-	fakeError               = errors.New("fakeError")
-	stopProcessingResult, _ = util.StopProcessing()
+	fakeError                   = errors.New("fakeError")
+	stopProcessingResult, _     = util.StopProcessing()
 	continueProcessingResult, _ = util.ContinueProcessing()
 )
 
@@ -43,7 +44,9 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 		projectClaim     *api.ProjectClaim
 		err              error
 		mockCtrl         *gomock.Controller
+		configMap        configmap.OperatorConfigMap
 	)
+
 	BeforeEach(func() {
 		projectReference = testStructs.NewProjectReferenceBuilder().GetProjectReference()
 		projectClaim = testStructs.NewProjectClaimBuilder().GetProjectClaim()
@@ -52,6 +55,10 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 		mockKubeClient = mocks.NewMockClient(mockCtrl)
 		mockGCPClient = mockGCP.NewMockClient(mockCtrl)
 		mockConditions = mockconditions.NewMockConditions(mockCtrl)
+		configMap = configmap.OperatorConfigMap{
+			BillingAccount: "fake-account",
+			ParentFolderID: "fake-folderID",
+		}
 	})
 	AfterEach(func() {
 		mockCtrl.Finish()
@@ -59,7 +66,7 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 	JustBeforeEach(func() {
 		claimLink := types.NamespacedName{Name: projectReference.Spec.ProjectClaimCRLink.Name, Namespace: projectReference.Spec.ProjectClaimCRLink.Namespace}
 		mockKubeClient.EXPECT().Get(gomock.Any(), claimLink, gomock.Any()).SetArg(2, *projectClaim)
-		adapter, err = NewReferenceAdapter(projectReference, logf.Log.WithName("Test Logger"), mockKubeClient, mockGCPClient, mockConditions)
+		adapter, err = NewReferenceAdapter(projectReference, logf.Log.WithName("Test Logger"), mockKubeClient, mockGCPClient, mockConditions, configMap)
 		Expect(err).NotTo(HaveOccurred())
 	})
 	Context("generated project names", func() {
@@ -282,34 +289,10 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 		})
 
 		Context("When non-CCS project", func() {
-			var (
-				configMap corev1.ConfigMap
-			)
-
-			BeforeEach(func() {
-				configMap = corev1.ConfigMap{
-					Data: map[string]string{
-						"billingAccount": "fake-account",
-						"parentFolderId": "fake-folder",
-					},
-				}
-			})
-
-			Context("When it fails to validate operator configmap", func() {
-				It("requeues with error", func() {
-					mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, corev1.ConfigMap{
-						Data: map[string]string{},
-					})
-					_, err := EnsureProjectCreated(adapter)
-					Expect(err).To(HaveOccurred())
-				})
-			})
-
 			Context("When it fails to create Project", func() {
 
 				Context("When it fails to get project", func() {
 					It("It requeues with error", func() {
-						mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 						mockGCPClient.EXPECT().ListProjects().Return(nil, fakeError)
 						_, err := EnsureProjectCreated(adapter)
 						Expect(err).To(HaveOccurred())
@@ -318,7 +301,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 
 				Context("When the lifecycleStatus is LIFECYCLE_STATE_UNSPECIFIED", func() {
 					It("It requeues with error", func() {
-						mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 						mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "foo", ProjectId: projectReference.Spec.GCPProjectID}}, nil)
 						_, err := EnsureProjectCreated(adapter)
 						Expect(err).To(HaveOccurred())
@@ -327,7 +309,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 
 				Context("When the lifecycleStatus is DELETE_REQUESTED and fails to update projectReference status", func() {
 					It("It requeues with error", func() {
-						mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 						mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "DELETE_REQUESTED", ProjectId: projectReference.Spec.GCPProjectID}}, nil)
 						mockKubeClient.EXPECT().Status().Return(mockStatusWriter)
 						mockStatusWriter.EXPECT().Update(gomock.Any(), gomock.Any()).Return(fakeError)
@@ -338,7 +319,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 
 				Context("When the project is inactive and update projectReference status successfully", func() {
 					It("It requeues with error", func() {
-						mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 						mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "DELETE_REQUESTED", ProjectId: projectReference.Spec.GCPProjectID}}, nil)
 						mockKubeClient.EXPECT().Status().Return(mockStatusWriter)
 						mockStatusWriter.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil)
@@ -353,7 +333,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 
 					Context("When fails to clear projectID", func() {
 						It("It requeues with error", func() {
-							mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 							mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "ACTIVE", ProjectId: "foo"}}, nil)
 							mockGCPClient.EXPECT().CreateProject(gomock.Any()).Return(nil, fakeError)
 							mockKubeClient.EXPECT().Update(gomock.Any(), gomock.Any()).Return(fakeError)
@@ -365,7 +344,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 
 					Context("When it clears projectID successfully", func() {
 						It("It requeues with error", func() {
-							mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 							mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "ACTIVE", ProjectId: "foo"}}, nil)
 							mockGCPClient.EXPECT().CreateProject(gomock.Any()).Return(nil, fakeError)
 							mockKubeClient.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil)
@@ -381,7 +359,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 			Context("When it fails to configure Billing API", func() {
 				Context("When it fails to list APIs", func() {
 					It("It requeues with error", func() {
-						mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 						mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "ACTIVE", ProjectId: projectReference.Spec.GCPProjectID}}, nil)
 						mockGCPClient.EXPECT().ListAPIs(gomock.Any()).Return(nil, fakeError)
 						_, err := EnsureProjectCreated(adapter)
@@ -391,7 +368,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 
 				Context("When it fails to enable Billing API", func() {
 					It("It requeues with error", func() {
-						mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 						mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "ACTIVE", ProjectId: projectReference.Spec.GCPProjectID}}, nil)
 						mockGCPClient.EXPECT().ListAPIs(gomock.Any()).Return([]string{"foo"}, nil)
 						mockGCPClient.EXPECT().EnableAPI(gomock.Any(), gomock.Any()).Return(fakeError)
@@ -403,7 +379,6 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 
 				Context("When it fails to create Cloud Billing account", func() {
 					It("It requeues with error", func() {
-						mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, configMap)
 						mockGCPClient.EXPECT().ListProjects().Return([]*cloudresourcemanager.Project{{LifecycleState: "ACTIVE", ProjectId: projectReference.Spec.GCPProjectID}}, nil)
 						mockGCPClient.EXPECT().ListAPIs(gomock.Any()).Return([]string{"cloudbilling.googleapis.com"}, nil)
 						mockGCPClient.EXPECT().CreateCloudBillingAccount(gomock.Any(), gomock.Any()).Return(fakeError)
@@ -566,6 +541,57 @@ var _ = Describe("ProjectreferenceAdapter", func() {
 					mockKubeClient.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
 					_, err := EnsureProjectConfigured(adapter)
 					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+		})
+
+		Context("When ccsConsoleAccess configured", func() {
+			JustBeforeEach(func() {
+				mockGCPClient.EXPECT().ListAPIs(gomock.Any()).Return(OSDRequiredAPIS, nil)
+				mockGCPClient.EXPECT().GetServiceAccount(gomock.Any()).Return(&iam.ServiceAccount{Email: "foo"}, nil)
+				mockGCPClient.EXPECT().GetIamPolicy(gomock.Any()).Return(&cloudresourcemanager.Policy{}, nil)
+				mockGCPClient.EXPECT().SetIamPolicy(gomock.Any()).Return(nil, nil)
+				mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(fakeError)
+				mockGCPClient.EXPECT().GetServiceAccount(gomock.Any()).Return(&iam.ServiceAccount{Email: "foo"}, nil)
+				mockGCPClient.EXPECT().CreateServiceAccountKey(gomock.Any()).Return(&iam.ServiceAccountKey{PrivateKeyData: "YWRtaW4="}, nil)
+				mockKubeClient.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil)
+
+				adapter.OperatorConfig.CCSConsoleAccess = []string{"sd-sre-platform-gcp-access"}
+			})
+
+			Context("When it is a non CCS project", func() {
+				It("nothing to do", func() {
+					_, err := EnsureProjectConfigured(adapter)
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+
+			Context("When it is a CCS project", func() {
+				JustBeforeEach(func() {
+					projectReference.Spec.CCS = true
+				})
+
+				Context("When only one ccsConsoleAccessAccount are configured", func() {
+					It("It doesn't need to create a service account", func() {
+						mockGCPClient.EXPECT().GetIamPolicy(gomock.Any()).Return(&cloudresourcemanager.Policy{}, nil)
+						mockGCPClient.EXPECT().SetIamPolicy(gomock.Any())
+						_, err := EnsureProjectConfigured(adapter)
+						Expect(err).ToNot(HaveOccurred())
+					})
+				})
+
+				Context("When multiple ccsConsoleAccessAccount are configured", func() {
+					JustBeforeEach(func() {
+						adapter.OperatorConfig.CCSConsoleAccess = []string{"foo", "bar"}
+					})
+					It("repeat the process", func() {
+						mockGCPClient.EXPECT().GetIamPolicy(gomock.Any()).Return(&cloudresourcemanager.Policy{}, nil)
+						mockGCPClient.EXPECT().SetIamPolicy(gomock.Any())
+						mockGCPClient.EXPECT().GetIamPolicy(gomock.Any()).Return(&cloudresourcemanager.Policy{}, nil)
+						mockGCPClient.EXPECT().SetIamPolicy(gomock.Any())
+						_, err := EnsureProjectConfigured(adapter)
+						Expect(err).ToNot(HaveOccurred())
+					})
 				})
 			})
 		})
