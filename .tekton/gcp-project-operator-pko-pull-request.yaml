@@ -13,7 +13,7 @@ metadata:
     appstudio.openshift.io/application: gcp-project-operator
     appstudio.openshift.io/component: gcp-project-operator-pko
     pipelines.appstudio.openshift.io/type: build
-  name: gcp-project-operator-pko-on-pull_request
+  name: gcp-project-operator-pko-on-pull-request
   namespace: gcp-project-operator-tenant
 spec:
   params:
