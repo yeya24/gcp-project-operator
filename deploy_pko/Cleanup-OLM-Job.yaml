@@ -12,7 +12,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: olm-cleanup
-  namespace: openshift-gcp-project-operator
+  namespace: gcp-project-operator
   annotations:
     package-operator.run/phase: cleanup-rbac
     package-operator.run/collision-protection: IfNoController
@@ -21,7 +21,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: olm-cleanup
-  namespace: openshift-gcp-project-operator
+  namespace: gcp-project-operator
   annotations:
     package-operator.run/phase: cleanup-rbac
     package-operator.run/collision-protection: IfNoController
@@ -32,6 +32,8 @@ rules:
     resources:
       - clusterserviceversions
       - subscriptions
+      - catalogsources
+      - operatorgroups
     verbs:
       - list
       - get
@@ -42,7 +44,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: olm-cleanup
-  namespace: openshift-gcp-project-operator
+  namespace: gcp-project-operator
   annotations:
     package-operator.run/phase: cleanup-rbac
     package-operator.run/collision-protection: IfNoController
@@ -53,13 +55,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: olm-cleanup
-    namespace: openshift-gcp-project-operator
+    namespace: gcp-project-operator
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: olm-cleanup
-  namespace: openshift-gcp-project-operator
+  namespace: gcp-project-operator
   annotations:
     package-operator.run/phase: cleanup-deploy
     package-operator.run/collision-protection: IfNoController
@@ -85,13 +87,10 @@ spec:
               set -euxo pipefail
               # CUSTOMIZE: Update the label selector for your operator
               # Example pattern: operators.coreos.com/OPERATOR_NAME.NAMESPACE
-              oc -n openshift-gcp-project-operator delete csv -l "operators.coreos.com/gcp-project-operator.openshift-gcp-project-operator" || true
-              
-              # CUSTOMIZE: Add any additional cleanup logic here
-              # Examples:
-              # - Delete subscriptions
-              # - Delete operator groups
-              # - Clean up custom resources
+              oc -n gcp-project-operator delete csv -l "operators.coreos.com/gcp-project-operator.gcp-project-operator" || true
+              oc -n gcp-project-operator delete subscription.operators.coreos.com gcp-project-operator || true
+              oc -n gcp-project-operator delete catalogsource.operators.coreos.com gcp-project-operator-catalog || true
+              oc -n gcp-project-operator delete operatorgroup.operators.coreos.com gcp-project-operator-og || true
           resources:
             requests:
               cpu: 100m
