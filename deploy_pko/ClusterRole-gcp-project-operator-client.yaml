@@ -24,7 +24,6 @@ rules:
   - create
 - apiGroups:
   - ''
-  attributeRestrictions: null
   resources:
   - configmaps
   verbs:
