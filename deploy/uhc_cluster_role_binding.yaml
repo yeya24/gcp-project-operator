@@ -4,7 +4,7 @@ metadata:
   name: gcp-project-operator-client
 subjects:
 - kind: ServiceAccount
-  namespace: gcp-project-operator-client
+  namespace: gcp-project-operator
   name: gcp-project-operator-client
 - kind: Group
   name: gcp-project-operator-client
